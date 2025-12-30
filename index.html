@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>聚会时光 - 2026版</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+    <style>
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #EEF2FF; border-radius: 10px; }
+        @keyframes slideIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-in { animation: slideIn 0.5s ease-out forwards; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo, useRef } = React;
+
+        // --- 1. 配置与 2026 假勤数据 (已更新) ---
+        const supabaseClient = supabase.createClient(
+            'https://jkodfhsyjvtpsbitqeuz.supabase.co', 
+            'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imprb2RmaHN5anZ0cHNiaXRxZXV6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjcwODQ4NzEsImV4cCI6MjA4MjY2MDg3MX0.9dCjk5jzxoBG_Gkn9Nv8RexFyrb7gvpKz890oaV1u-U'
+        );
+
+        // 2026年节假日预判 (含春节等固定节日)
+        const HOLIDAYS_2026 = {
+            "2026-01-01": "元旦",
+            "2026-02-16": "除夕", "2026-02-17": "春节", "2026-02-18": "初二", "2026-02-19": "初三",
+            "2026-04-05": "清明节",
+            "2026-05-01": "劳动节",
+            "2026-06-19": "端午节",
+            "2026-09-25": "中秋节",
+            "2026-10-01": "国庆节"
+        };
+        // 2026年预测补班日
+        const WORKDAYS_2026 = ["2026-02-08", "2026-02-28", "2026-10-10"];
+
+        const formatDate = (date) => date.toISOString().split('T')[0];
+        const getDayOfWeek = (dateStr) => ["周日", "周一", "周二", "周三", "周四", "周五", "周六"][new Date(dateStr).getDay()];
+        const getHoliday = (dateStr) => HOLIDAYS_2026[dateStr] ? { name: HOLIDAYS_2026[dateStr] } : null;
+        const isWeekend = (dateStr) => {
+            const day = new Date(dateStr).getDay();
+            // 如果是周六日且不在补班名单中，或者是法定节假日，则视为非工作日
+            return (day === 0 || day === 6) && !WORKDAYS_2026.includes(dateStr);
+        };
+        const getDaysInRange = (start, end) => {
+            const arr = [];
+            let dt = new Date(start);
+            const endDt = new Date(end);
+            while (dt <= endDt) { arr.push(new Date(dt)); dt.setDate(dt.getDate() + 1); }
+            return arr;
+        };
+
+        const TIME_PERIOD_LABELS = {
+            MORNING: { label: '早晨', icon: '☀️', range: '08:00-12:00' },
+            AFTERNOON: { label: '下午', icon: '☕', range: '12:00-18:00' },
+            EVENING: { label: '晚上', icon: '🌙', range: '18:00-23:00' }
+        };
+
+        // --- 2. 还原原版高颜值组件 ---
+        const PeriodButton = ({ selected, onClick, label, icon }) => (
+          <button onClick={(e) => { e.preventDefault(); onClick(); }}
+            className={`flex-1 p-2.5 rounded-2xl text-xs flex flex-col items-center justify-center transition-all duration-300 ${
+              selected ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100 scale-105' : 'bg-white border border-gray-100 text-gray-500 hover:border-indigo-200 hover:bg-indigo-50/30'
+            }`}>
+            <span className="text-xl mb-1">{icon}</span>
+            <span className="font-semibold">{label}</span>
+          </button>
+        );
+
+        const ResultCard = ({ rec, isBest }) => (
+          <div className={`group relative p-5 rounded-3xl border transition-all duration-500 mb-4 ${
+            isBest ? 'bg-white border-indigo-200 shadow-2xl shadow-indigo-100 ring-1 ring-indigo-500/20' : 'bg-white/60 border-gray-100 hover:border-indigo-100 hover:bg-white'
+          }`}>
+            {isBest && (
+              <div className="absolute -top-3 -left-3 bg-gradient-to-r from-yellow-400 to-orange-500 text-white text-[10px] font-black px-3 py-1 rounded-full shadow-lg transform -rotate-12">
+                🏆 最佳推荐
+              </div>
+            )}
+            <div className="flex justify-between items-start">
+              <div className="space-y-1">
+                <h4 className="font-bold text-gray-900 text-lg flex items-center gap-2">
+                  {rec.date} <span className="text-sm font-medium text-indigo-400">{getDayOfWeek(rec.date)}</span>
+                  {getHoliday(rec.date) && <span className="px-2 py-0.5 bg-rose-50 text-rose-500 text-[10px] font-bold rounded-lg border border-rose-100">{getHoliday(rec.date).name}</span>}
+                </h4>
+                <div className="flex items-center gap-2 text-indigo-600 font-bold">
+                  <span className="text-xl">{TIME_PERIOD_LABELS[rec.period].icon}</span>
+                  <span>{TIME_PERIOD_LABELS[rec.period].label}</span>
+                </div>
+              </div>
+              <div className="text-right">
+                <span className={`text-3xl font-black ${isBest ? 'text-indigo-600' : 'text-gray-700'}`}>{rec.availableCount}</span>
+                <span className="text-gray-400 text-sm">/{rec.totalCount}人有空</span>
+              </div>
+            </div>
+            <div className="mt-4 pt-4 border-t border-gray-50 flex flex-wrap gap-2">
+                {rec.participants.map(p => <span key={p} className="px-3 py-1 bg-gray-50 text-gray-600 text-[11px] font-semibold rounded-xl">{p}</span>)}
+            </div>
+          </div>
+        );
+
+        // --- 3. App 核心逻辑 ---
+        function App() {
+            const [meeting, setMeeting] = useState(null);
+            const [userName, setUserName] = useState('');
+            const [userAvailability, setUserAvailability] = useState([]);
+            const [view, setView] = useState('create');
+            const [pendingRanges, setPendingRanges] = useState([{ start: '', end: '' }]);
+            const [loadingMeeting, setLoadingMeeting] = useState(false);
+            const [roomCodeInput, setRoomCodeInput] = useState('');
+
+            useEffect(() => {
+                const params = new URLSearchParams(window.location.search);
+                const id = params.get('id');
+                if (id) loadMeeting(id);
+            }, []);
+
+            const loadMeeting = async (id) => {
+                setLoadingMeeting(true);
+                const { data: mData } = await supabaseClient.from('meetings').select('*').eq('id', id).single();
+                if (mData) {
+                    const { data: pData } = await supabaseClient.from('participants').select('*').eq('meeting_id', id);
+                    setMeeting({ id: mData.id, title: mData.title, dateRanges: mData.date_ranges, participants: pData || [] });
+                    setView('join');
+                    const url = `${window.location.origin}${window.location.pathname}?id=${id}`;
+                    window.history.pushState({}, '', url);
+                }
+                setLoadingMeeting(false);
+            };
+
+            const handleCreateMeeting = async (e) => {
+                e.preventDefault();
+                const title = new FormData(e.currentTarget).get('title');
+                const newId = Math.random().toString(36).substring(2, 10).toUpperCase();
+                const { error } = await supabaseClient.from('meetings').insert({ id: newId, title, date_ranges: pendingRanges });
+                if (!error) loadMeeting(newId);
+            };
+
+            const handleJoin = async () => {
+                if (!userName) return alert("请输入姓名");
+                const { error } = await supabaseClient.from('participants').insert({ meeting_id: meeting.id, name: userName, availability: userAvailability });
+                if (!error) { alert("接力成功！"); loadMeeting(meeting.id); }
+            };
+
+            const allDays = useMemo(() => {
+                if (!meeting) return [];
+                const days = [];
+                meeting.dateRanges.forEach(range => {
+                    getDaysInRange(range.start, range.end).forEach(d => days.push(d));
+                });
+                return days.sort((a, b) => a - b);
+            }, [meeting]);
+
+            const recommendations = useMemo(() => {
+                if (!meeting || meeting.participants.length === 0) return [];
+                const res = [];
+                allDays.forEach(day => {
+                    const dateStr = formatDate(day);
+                    ['MORNING', 'AFTERNOON', 'EVENING'].forEach(period => {
+                        const av = meeting.participants.filter(p => p.availability.some(d => d.date === dateStr && d.periods.includes(period)));
+                        if (av.length > 0) res.push({ date: dateStr, period, availableCount: av.length, totalCount: meeting.participants.length, participants: av.map(p => p.name) });
+                    });
+                });
+                return res.sort((a, b) => b.availableCount - a.availableCount);
+            }, [meeting, allDays]);
+
+            if (loadingMeeting) return <div className="min-h-screen flex items-center justify-center bg-indigo-50/20 font-bold text-indigo-600">正在进入房间...</div>;
+
+            return (
+                <div className="max-w-md mx-auto min-h-screen flex flex-col bg-[#FDFDFF] shadow-2xl">
+                    <header className="px-6 pt-12 pb-6 bg-white/80 backdrop-blur-md sticky top-0 z-50 border-b border-gray-100">
+                        <h1 className="text-2xl font-black text-gray-900 flex items-center gap-2">📅 聚会时光</h1>
+                        <p className="text-[9px] font-black text-indigo-400 uppercase tracking-widest mt-0.5">2026 官方预判版</p>
+                    </header>
+
+                    <main className="flex-1 px-6 py-8 pb-32 space-y-8 overflow-y-auto custom-scrollbar">
+                        {view === 'create' && (
+                            <div className="animate-in space-y-8">
+                                <div className="bg-white p-8 rounded-[40px] shadow-xl border border-gray-50">
+                                    <h2 className="text-xl font-black mb-6">发起 2026 接力 🆕</h2>
+                                    <form onSubmit={handleCreateMeeting} className="space-y-6">
+                                        <input name="title" placeholder="如：跨年狂欢、新春团圆" className="w-full px-5 py-4 bg-gray-50 border border-gray-100 rounded-2xl font-bold outline-none" required />
+                                        {pendingRanges.map((r, i) => (
+                                            <div key={i} className="flex gap-2 p-4 bg-gray-50 rounded-2xl border items-center">
+                                                <input type="date" className="bg-transparent text-xs font-bold flex-1" onChange={e => { const n=[...pendingRanges]; n[i].start=e.target.value; setPendingRanges(n); }} />
+                                                <span className="text-gray-300">→</span>
+                                                <input type="date" className="bg-transparent text-xs font-bold flex-1" onChange={e => { const n=[...pendingRanges]; n[i].end=e.target.value; setPendingRanges(n); }} />
+                                            </div>
+                                        ))}
+                                        <button type="submit" className="w-full py-5 bg-indigo-600 text-white rounded-[30px] font-black text-lg shadow-xl">创建接力</button>
+                                    </form>
+                                    <div className="mt-8 pt-8 border-t flex gap-2">
+                                        <input value={roomCodeInput} onChange={e=>setRoomCodeInput(e.target.value)} placeholder="房间口令" className="flex-1 px-4 py-3 bg-gray-50 rounded-2xl text-sm font-black uppercase" />
+                                        <button onClick={()=>loadMeeting(roomCodeInput.toUpperCase())} className="px-6 bg-gray-900 text-white text-xs font-black rounded-2xl">进入</button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {view === 'join' && meeting && (
+                            <div className="animate-in space-y-6">
+                                <div className="bg-indigo-600 p-8 rounded-[40px] text-white shadow-2xl relative overflow-hidden">
+                                    <h2 className="text-2xl font-black relative z-10">{meeting.title}</h2>
+                                    <p className="text-xs font-bold opacity-60 mt-1">口令: {meeting.id} | 已有 {meeting.participants.length} 人登记</p>
+                                </div>
+
+                                <div className="bg-white p-6 rounded-[40px] border border-gray-50 shadow-sm space-y-6">
+                                    <input value={userName} onChange={e=>setUserName(e.target.value)} placeholder="你的昵称" className="w-full px-5 py-4 bg-gray-50 rounded-2xl font-bold outline-none" />
+                                    <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                                        {allDays.map(day => {
+                                            const ds = formatDate(day);
+                                            const holiday = getHoliday(ds);
+                                            const selected = userAvailability.find(d => d.date === ds)?.periods || [];
+                                            return (
+                                                <div key={ds} className={`p-5 rounded-3xl border ${isWeekend(ds) ? 'bg-orange-50/30 border-orange-100' : 'bg-gray-50'}`}>
+                                                    <div className="flex justify-between items-center mb-3">
+                                                        <span className="text-sm font-black">{ds} {getDayOfWeek(ds)}</span>
+                                                        {holiday && <span className="text-[10px] bg-rose-500 text-white px-2 py-0.5 rounded-md font-bold">{holiday.name}</span>}
+                                                    </div>
+                                                    <div className="flex gap-2">
+                                                        {Object.keys(TIME_PERIOD_LABELS).map(p => (
+                                                            <PeriodButton key={p} label={TIME_PERIOD_LABELS[p].label} icon={TIME_PERIOD_LABELS[p].icon} selected={selected.includes(p)} 
+                                                                onClick={() => {
+                                                                    let next = [...userAvailability];
+                                                                    let idx = next.findIndex(d => d.date === ds);
+                                                                    if(idx === -1) next.push({ date: ds, periods: [p] });
+                                                                    else next[idx].periods = next[idx].periods.includes(p) ? next[idx].periods.filter(x=>x!==p) : [...next[idx].periods, p];
+                                                                    setUserAvailability(next);
+                                                                }} 
+                                                            />
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                    <button onClick={handleJoin} className="w-full py-5 bg-indigo-600 text-white rounded-[30px] font-black shadow-xl">提交我的接力</button>
+                                    <button onClick={() => setView('results')} className="w-full py-4 bg-emerald-50 text-emerald-600 text-sm font-black rounded-[25px]">查看全员最佳结果</button>
+                                </div>
+                            </div>
+                        )}
+
+                        {view === 'results' && (
+                            <div className="animate-in space-y-8">
+                                <h2 className="text-3xl font-black text-center text-gray-900">推荐方案 🏆</h2>
+                                <div className="space-y-4">
+                                    {recommendations.slice(0, 10).map((rec, i) => <ResultCard key={i} rec={rec} isBest={i === 0} />)}
+                                </div>
+                                <button onClick={() => setView('join')} className="w-full py-5 bg-white border border-gray-100 text-gray-800 rounded-[30px] font-black">返回修改</button>
+                            </div>
+                        )}
+                    </main>
+
+                    <footer className="fixed bottom-0 left-0 right-0 p-5 bg-white/80 backdrop-blur-xl border-t border-gray-50 max-w-md mx-auto rounded-t-[40px]">
+                        <div className="flex justify-center items-center gap-2 text-[9px] font-black text-emerald-600 uppercase">
+                            <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
+                            云端同步已就绪
+                        </div>
+                    </footer>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
